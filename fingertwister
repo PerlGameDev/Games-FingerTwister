@@ -1,0 +1,374 @@
+use strict;
+use warnings;
+use lib 'lib';
+
+package main;
+use SDL;
+use SDLx::App;
+use SDLx::Text;
+use SDL::Rect;
+use SDL::Event;
+use SDL::Events;
+use SDLx::Sprite::Animated;
+use List::AllUtils qw(any shuffle);
+use Games::FingerTwister::Audio;
+use Games::FingerTwister::Key;
+use Storable;
+use Getopt::Long;
+
+my $options = {
+    mykeyboardisawesome => 0,
+    music               => 1,
+    sfx                 => 1,
+};
+GetOptions($options, 'mykeyboardisawesome', 'music!', 'sfx!');
+
+my $app = SDLx::App->new( title => 'Finger Twister' );
+
+Audio::start_music('data/music.ogg') if $options->{music};
+
+my $bleep = $options->{sfx} ? Audio::load_sound('data/toggle.wav') : '';
+
+my $timebar = {
+    rect  => SDLx::Rect->new( 10, $app->h - 80, $app->w - 20, 20 ),
+    color => [0, 255, 0, 80],
+};
+$timebar->{original_size} = $timebar->{rect}->w;
+
+my $score = {
+    text => SDLx::Text->new( size => 40, x => 20, y => 20 ),
+    value => 0,
+};
+
+my $level = 1;
+
+my %keyboard = (
+    1 => { key => SDLK_1, nono => [qw( 2 q )] },
+    2 => { key => SDLK_2, nono => [qw( 1 3 q w )] },
+    3 => { key => SDLK_3, nono => [qw( 2 4 w e )] },
+    4 => { key => SDLK_4, nono => [qw( w 3 5 e r )] },
+    5 => { key => SDLK_5, nono => [qw( 4 6 r t )] },
+    6 => { key => SDLK_6, nono => [qw( 5 7 t y )] },
+    7 => { key => SDLK_7, nono => [qw( 6 8 y u )] },
+    8 => { key => SDLK_8, nono => [qw( 7 9 u i )] },
+    9 => { key => SDLK_9, nono => [qw( 8 0 i o )] },
+    0 => { key => SDLK_0, nono => [qw( 9 o p )]   },
+
+    a => { key => SDLK_a, nono => [qw( q w s z )] },
+    b => { key => SDLK_b, nono => [qw( v g h n )] },
+    c => { key => SDLK_c, nono => [qw( x d f v )] },
+    d => { key => SDLK_d, nono => [qw( s e r f c x)]},
+    e => { key => SDLK_e, nono => [qw( w 3 4 r f d s)]},
+    f => { key => SDLK_f, nono => [qw( d e r t g v c)]},
+    g => { key => SDLK_g, nono => [qw( f t y h b v)]},
+    h => { key => SDLK_h, nono => [qw( g y u j n b)]},
+    i => { key => SDLK_i, nono => [qw( u 8 9 o l k j)]},
+    j => { key => SDLK_j, nono => [qw( h u i k m n)]},
+    k => { key => SDLK_k, nono => [qw( j i o l m)]},
+    l => { key => SDLK_l, nono => [qw( k o p )]},
+    m => { key => SDLK_m, nono => [qw( n j k)]},
+    n => { key => SDLK_n, nono => [qw( b h j m )]},
+    o => { key => SDLK_o, nono => [qw( i 9 0 p l k)]},
+    p => { key => SDLK_p, nono => [qw( o 0 )]},
+    q => { key => SDLK_q, nono => [qw( 1 2 w s a )]},
+    r => { key => SDLK_r, nono => [qw( e 4 5 t f d )]},
+    s => { key => SDLK_s, nono => [qw( a q w e d x z)]},
+    t => { key => SDLK_t, nono => [qw( r 5 6 y h g f)]},
+    u => { key => SDLK_u, nono => [qw( y 7 8 i k j h)]},
+    v => { key => SDLK_v, nono => [qw( c f g b )]},
+    w => { key => SDLK_w, nono => [qw( 4 q 2 3 e d s a)]},
+    x => { key => SDLK_x, nono => [qw(z s d c)]},
+    y => { key => SDLK_y, nono => [qw(t 6 7 u j h g)]},
+    z => { key => SDLK_z, nono => [qw(a s x)]},
+);
+
+my @keys = keys %keyboard;
+my @keys_on_screen = ();
+my $current;
+my @keys_exiting = ();
+
+
+# we try to avoid key jamming on cheap keyboards
+# like my own, that have a keyboard switch matrix
+# which doesn't really support n-key rollover (NKRO).
+# I should advise gamers to consider using gaming
+# keyboards such as razerzone's or logitech's G15/G19.
+# What we try here is a quick, dirty and wrong approach,
+# that does the trick for most cases. We basically avoid
+# using keys that touch each other on a standard querty
+# keyboard. If you use a french (azerty), dvorak, or
+# any other variation, sorry.
+sub pick {
+    @keys = shuffle @keys;
+    my $ret;
+
+    unless ($options->{mykeyboardisawesome}) {
+        PICK:
+        foreach my $p (0 .. $#keys) {
+            foreach my $nono (@{$keyboard{$keys[$p]}{nono}}) {
+                next PICK if any { $nono eq $_->key_name } @keys_on_screen;
+            }
+            $ret = splice @keys, $p, 1;
+            last PICK;
+        }
+    }
+
+    $ret = pop @keys unless $ret;
+    return $ret;
+}
+
+
+my $text = SDLx::Text->new( color => [0,0,0], size => 120 );
+
+# initializes our key surface
+my $button = {
+    sprite  => SDLx::Sprite->new( image => 'data/button.png'),
+    waiting => SDL::Rect->new(0,0,169,168),
+    pressed => SDL::Rect->new(0,170,169,168),
+};
+
+game();
+
+$app->run;
+
+### IDEA:
+#
+# add_event_handler => sub { ... } => 'my event';
+#
+# or
+#
+# add_event_handler( sub {...}, 'my event' );
+#
+# then get it by name (if needed)
+#
+# $app->event('my event'); ??
+#
+# but why would someone need to label their handlers?
+
+
+sub high_score {
+    $app->remove_all_handlers;
+    $app->add_event_handler( \&exit_on_quit );
+
+    my $highscore = retrieve('data/high.dat') || [];
+    if ($highscore->[9] and $highscore->[9]->{score} >= $score->{value}) {
+        show_high_scores();
+    }
+    else{
+        my $congrats = SDLx::Text->new(
+                text => 'New High Score!',
+                size => 60,
+                y    => ($app->h / 2) - 120,
+                h_align => 'center',
+        );
+
+        my $enter_name = SDLx::Text->new(
+                size => 38,
+                y    => ($app->h/ 2) - 38,
+                h_align => 'center',
+        );
+
+        my @player_name = ();
+
+        $app->add_show_handler( sub {
+            my ($delta, $app) = @_;
+
+            $app->draw_rect( [0,0, $app->w, $app->h], 0x222200 );
+            $congrats->write_to($app);
+            $enter_name->write_to($app, "Name: @player_name");
+            $app->update;
+        });
+
+        $app->add_event_handler( sub {
+            my ($event, $app) = @_;
+            return unless @player_name < 3;
+
+            if ( $event->type == SDL_KEYDOWN ) {
+                push @player_name, uc SDL::Events::get_key_name($event->key_sym);
+                if (@player_name == 3) {
+                    push @$highscore, { score => $score->{value},
+                                        name  => join '', @player_name
+                                      };
+                    my @sorted = sort { $b->{score} <=> $a->{score} } @$highscore;
+                    splice @sorted, 10;
+                    store(\@sorted, 'data/high.dat');
+                    $app->stash->{highscore} = \@sorted;
+                    show_high_scores();
+                }
+            }
+        });
+    }
+}
+
+sub show_high_scores {
+    $app->remove_all_handlers;
+    $app->add_event_handler( \&exit_on_quit );
+
+    my $highscore = $app->stash->{highscore} || retrieve('data/high.dat') || [];
+
+    my $players = SDLx::Text->new(
+            size    => 38,
+            y       => 10,
+            h_align => 'center',
+    );
+
+    $app->add_show_handler( sub {
+        my ($delta, $app) = @_;
+
+        $app->draw_rect( [0,0, $app->w, $app->h], 0x222200 );
+        $players->y(10);
+        $players->write_to($app, 'HIGH SCORES');
+        my $y = 100;
+        foreach my $player (@$highscore) {
+            $players->y( $y );
+            $y += 40;
+            $players->write_to($app, $player->{name} . ' : ' . $player->{score});
+        }
+        $app->update;
+
+    });
+
+    $app->add_event_handler( sub {
+        my ($event, $app) = @_;
+        game() if $event->type == SDL_KEYDOWN;
+    });
+}
+
+sub game_over {
+    $app->remove_all_handlers;
+    $app->add_event_handler( \&exit_on_quit );
+
+    my $big_message = SDLx::Text->new(
+       text    => 'GAME OVER',
+       size    => 120,
+       h_align => 'center',
+       y       => ($app->h / 2) - 120,
+       color   => [155,155,0],
+    );
+
+    $app->add_show_handler( sub {
+            my ($delta, $app) = @_;
+            $big_message->write_to($app);
+            $app->update;
+    });
+
+
+    $app->add_event_handler( sub {
+        my ($event, $app) = @_;
+        high_score() if $event->type == SDL_KEYDOWN;
+    });
+
+}
+
+
+sub game {
+    $level = 1;
+    $score->{value} = 0;
+    @keys_on_screen = ();
+    @keys_exiting   = ();
+
+    push @keys_on_screen, Games::FingerTwister::Key->new( key_name => pick() );
+    $current = $keys_on_screen[-1];
+
+    $timebar->{rect}->w( $timebar->{original_size} );
+
+    $app->remove_all_handlers;
+    $app->add_event_handler( \&exit_on_quit );
+
+    $app->add_event_handler( \&on_event );
+    $app->add_move_handler( \&update_timebar );
+    $app->add_move_handler( \&move_keys );
+    $app->add_show_handler( \&on_display );
+}
+
+
+sub exit_on_quit {
+    my ($event, $app) = @_;
+    $app->stop() if $event->type == SDL_QUIT;
+}
+
+
+sub move_keys {
+    my ($delta, $app) = @_;
+
+    foreach my $i (0 .. $#keys_on_screen) {
+        my $key = $keys_on_screen[$i];
+        my $x = $key->x;
+        if ( $x > 40 + (168 * $i) ) {
+            $key->x( $x - 30 * $delta );
+        }
+    }
+
+    foreach my $key (@keys_exiting) {
+        my $x = $key->x;
+        $key->x( $x - 30 * $delta );
+        if ($x + $button->{sprite}->w <= 0) {
+            shift @keys_exiting;
+        }
+    }
+}
+
+sub update_timebar {
+    my ($delta, $app) = @_;
+
+    my $w = $timebar->{rect}->w() - ($level * $delta);
+    return if $w <= 0;
+
+    $timebar->{color}->[0] = 0xFF * (1 - ($w / $timebar->{original_size}));
+    $timebar->{color}->[1] = 0xFF * ($w / $timebar->{original_size});
+    $timebar->{rect}->w( $w );
+}
+
+sub on_event {
+    my ($event, $app) = @_;
+
+    if ( $event->type == SDL_KEYDOWN ) {
+        if ($event->key_sym eq $keyboard{$current->key_name}->{key} ) {
+            Audio::play($bleep);
+            $current->type('pressed');
+            push @keys_on_screen, Games::FingerTwister::Key->new( key_name => pick() );
+            $current = $keys_on_screen[-1];
+
+            if (@keys_on_screen > 4) {
+                my $exiting = shift @keys_on_screen;
+                $exiting->type('waiting');
+                push @keys, $exiting->key_name;
+                push @keys_exiting, $exiting;
+            }
+            $score->{value} += int(5_000 * ($timebar->{rect}->w / $timebar->{original_size}));
+            $level = int($score->{value} / 10_000) + 1; 
+            $timebar->{rect}->w( $timebar->{original_size} );
+        }
+        else {
+            game_over();
+            return;
+        }
+    }
+    elsif ($event->type == SDL_KEYUP) {
+        foreach my $key (@keys_on_screen) {
+            if ( $event->key_sym eq $keyboard{$key->key_name}->{key} ) {
+                game_over();
+                return;
+            }
+        }
+    }
+    return 1;
+}
+
+sub on_display {
+    my ($delta, $app) = @_;
+    $app->draw_rect( [0,0, $app->w, $app->h], 0x222200 );
+    
+    my $y = $app->h / 2 - $button->{pressed}->h;
+    my $x;
+    foreach my $item (@keys_exiting, @keys_on_screen) {
+        next unless $item;
+        $button->{sprite}->clip( $button->{ $item->type } );
+        $button->{sprite}->draw_xy( $app, $item->x, $item->y );
+        $text->text( $item->key_name )->write_xy($app, $item->x + 30, $item->y + 10);
+    }
+
+    $score->{text}->write_to( $app, "Level $level, Score " . $score->{value} );
+    $app->draw_rect( $timebar->{rect}, $timebar->{color} );
+    $app->update;
+}

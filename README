@@ -1,0 +1,33 @@
+Press the keys as they show up on screen, and DON'T LET GO!!
+
+Well, until they go away :)
+
+Available options:
+
+   --no-music       Disables music. Use this if music doesn't play or plays as line noise.
+   --no-sfx         Same for sound effects.
+
+   --mykeyboardisawesome    Use this options if your keyboard has no key-locking bugs
+                            (you can press any 4 keys simultaneously)
+
+
+Have fun!
+
+
+LICENSE AND COPYRIGHT:
+
+Game:
+
+    Licensed under the same terms as Perl itself.
+
+Game Music:
+    "Vaccuux" by DJ Adori
+    http://ccmixter.org/files/DJ_Adori/19525
+    is licensed under a Creative Commons license:
+    http://creativecommons.org/licenses/by-nc/3.0/
+
+Button Sound Effect:
+    "btn090" by junggle
+    http://www.freesound.org/samplesViewSingle.php?id=28900
+    is licensed under a Creative Commons license:
+    http://creativecommons.org/licenses/sampling+/1.0/
