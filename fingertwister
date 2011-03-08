@@ -48,7 +48,7 @@ my %keyboard = (
     3 => { key => SDLK_3, nono => [qw( 2 4 w e )] },
     4 => { key => SDLK_4, nono => [qw( w 3 5 e r )] },
     5 => { key => SDLK_5, nono => [qw( 4 6 r t )] },
-    6 => { key => SDLK_6, nono => [qw( 5 7 t y )] },
+    6 => { key => SDLK_6, nono => [qw( 5 7 t y u)] },
     7 => { key => SDLK_7, nono => [qw( 6 8 y u )] },
     8 => { key => SDLK_8, nono => [qw( 7 9 u i )] },
     9 => { key => SDLK_9, nono => [qw( 8 0 i o )] },
@@ -70,16 +70,16 @@ my %keyboard = (
     n => { key => SDLK_n, nono => [qw( b h j m )]},
     o => { key => SDLK_o, nono => [qw( i 9 0 p l k)]},
     p => { key => SDLK_p, nono => [qw( o 0 )]},
-    q => { key => SDLK_q, nono => [qw( 1 2 w s a )]},
+    q => { key => SDLK_q, nono => [qw( 1 2 w s a z)]},
     r => { key => SDLK_r, nono => [qw( e 4 5 t f d )]},
     s => { key => SDLK_s, nono => [qw( a q w e d x z)]},
     t => { key => SDLK_t, nono => [qw( r 5 6 y h g f)]},
-    u => { key => SDLK_u, nono => [qw( y 7 8 i k j h)]},
+    u => { key => SDLK_u, nono => [qw( y 7 8 i k j h 8)]},
     v => { key => SDLK_v, nono => [qw( c f g b )]},
     w => { key => SDLK_w, nono => [qw( 4 q 2 3 e d s a)]},
     x => { key => SDLK_x, nono => [qw(z s d c)]},
     y => { key => SDLK_y, nono => [qw(t 6 7 u j h g)]},
-    z => { key => SDLK_z, nono => [qw(a s x)]},
+    z => { key => SDLK_z, nono => [qw(a s x q)]},
 );
 
 my @keys = keys %keyboard;
